@@ -144,6 +144,31 @@ class LiveSession:
             "step_s": self.step_s,
         }
 
+    async def stop(self) -> dict[str, Any]:
+        task = self.task
+        if task is None or task.done():
+            return {
+                "stopped": False,
+                "running": False,
+                "trial_id": self.trial_id or None,
+            }
+
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+        if self.task is task:
+            self.task = None
+
+        return {
+            "stopped": True,
+            "running": False,
+            "trial_id": self.trial_id or None,
+            "tick": self.tick,
+        }
+
     async def _run(self, config: dict[str, Any]) -> None:
         assert self.plant is not None
         assert self.communication is not None
@@ -229,7 +254,14 @@ session = LiveSession()
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
-    return {"running": bool(session.task and not session.task.done()), "tick": session.tick, "schema_version": "twin_state_v1"}
+    running = bool(session.task and not session.task.done())
+    return {
+        "running": running,
+        "tick": session.tick,
+        "trial_id": session.trial_id or None,
+        "scenario": session.scenario if session.trial_id else None,
+        "schema_version": "twin_state_v1",
+    }
 
 
 @app.post("/trials/start")
@@ -240,6 +272,11 @@ async def start_trial(request: StartTrialRequest) -> dict[str, Any]:
         raise HTTPException(status_code=409, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post("/trials/stop")
+async def stop_trial() -> dict[str, Any]:
+    return await session.stop()
 
 
 @app.post("/respond")

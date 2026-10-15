@@ -8,8 +8,10 @@ Run from the repository root after exporting the FMU:
 .\.venv\Scripts\python.exe -m server.live_server --host 127.0.0.1 --port 8000
 ```
 
-- `GET /health` reports session state and schema version.
+- `GET /health` reports whether a session is running, its trial ID/scenario,
+  current tick, and schema version.
 - `POST /trials/start` starts one session with scenario, controller, participant, condition, and duration.
+- `POST /trials/stop` cancels the active session and releases the single-trial slot. A second start request receives HTTP 409 while a trial is active.
 - `WebSocket /ws` broadcasts the versioned payload defined by `schema/twin_state_v1.json`.
 - `POST /respond` scores and persists a participant action.
 

@@ -209,11 +209,12 @@ Start the Streamlit client in another terminal:
 \.venv\Scripts\python.exe -m streamlit run ui\app.py
 ```
 
-The server exposes `/health`, `/trials/start`, `/respond`, and the WebSocket
-`/ws`. Its current payload contract is `schema/twin_state_v1.json`. Batch and
-live paths use the same `server/twin_pipeline.py`; client code must display the
-shared state rather than reimplement estimation, diagnosis, prediction, or
-control.
+The server exposes `/health`, `/trials/start`, `/trials/stop`, `/respond`, and
+the WebSocket `/ws`. `/health` reports whether a trial is active;
+`/trials/stop` cancels it and releases the single live-session slot. Its state
+payload contract is `schema/twin_state_v1.json`. Batch and live paths use the
+same `server/twin_pipeline.py`; client code must display the shared state
+rather than reimplement estimation, diagnosis, prediction, or control.
 
 ## Optional BaSyx AAS
 
