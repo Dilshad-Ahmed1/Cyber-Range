@@ -18,9 +18,15 @@ class BaselineThresholdController:
         self.warning_C = warning_C
         self.critical_C = critical_C
 
-    def compute(self, measurement: dict[str, float]) -> ControlCommand:
+    def compute(
+        self,
+        measurement: dict[str, float],
+        sensor_reliable: bool = True,
+    ) -> ControlCommand:
         T = float(measurement["T_sensor_C"])
-        if T >= self.critical_C:
+        if not sensor_reliable:
+            load = self.minimum_load_pu
+        elif T >= self.critical_C:
             load = self.minimum_load_pu
         elif T >= self.warning_C:
             alpha = (T - self.warning_C) / (self.critical_C - self.warning_C)
@@ -28,5 +34,8 @@ class BaselineThresholdController:
         else:
             load = self.reference_load_pu
         return ControlCommand(
-            load_torque_pu=max(self.minimum_load_pu, min(self.reference_load_pu, load)),
+            load_torque_pu=max(
+                self.minimum_load_pu,
+                min(self.reference_load_pu, load),
+            ),
         )

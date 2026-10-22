@@ -22,10 +22,19 @@ class PlantState:
     motor_torque_Nm: float | None = None
     motor_status: str = "unknown"
     thermal_margin_C: float | None = None
+    ambient_temperature_C: float | None = None
+    supply_frequency_Hz: float | None = None
+    power_factor: float | None = None
+    reactive_power_var: float | None = None
+    voltage_unbalance_percent: float | None = None
+    current_pu: float | None = None
+    load_torque_pu: float | None = None
 
     def as_measurement(self) -> dict[str, float]:
         """Adapt standard observations to the existing twin APIs."""
+        shaft_power = self.shaft_power_W or 0.0
         values = {
+            "timestamp_s": self.timestamp_s,
             "T_sensor_C": self.temperature_C,
             "T_frame_C": self.frame_temperature_C
             if self.frame_temperature_C is not None
@@ -36,20 +45,23 @@ class PlantState:
             "P_electrical_W": self.electrical_power_W,
             "torque_load_Nm": self.load_torque_Nm,
             "torque_motor_Nm": self.motor_torque_Nm or self.load_torque_Nm,
-            "P_shaft_W": self.shaft_power_W or 0.0,
-            "P_loss_total_W": max(
-                0.0,
-                self.electrical_power_W - (self.shaft_power_W or 0.0),
-            ),
-            "power_factor": 0.81,
-            "vibration_mm_s_out": self.vibration_mm_s or 0.0,
-            "thermal_margin_to_critical_K": self.thermal_margin_C or 0.0,
-            "thermal_state": 2.0
-            if (self.thermal_margin_C or 0.0) <= 0.0
-            else 1.0
-            if (self.thermal_margin_C or 0.0) <= 20.0
-            else 0.0,
+            "P_shaft_W": shaft_power,
+            "P_loss_total_W": max(0.0, self.electrical_power_W - shaft_power),
         }
+        optional = {
+            "T_ambient_C": self.ambient_temperature_C,
+            "supply_frequency_Hz": self.supply_frequency_Hz,
+            "power_factor": self.power_factor,
+            "reactive_power_var": self.reactive_power_var,
+            "voltage_unbalance_percent": self.voltage_unbalance_percent,
+            "current_pu": self.current_pu,
+            "load_torque_pu": self.load_torque_pu,
+            "vibration_mm_s_out": self.vibration_mm_s,
+            "thermal_margin_to_critical_K": self.thermal_margin_C,
+        }
+        values.update(
+            {name: value for name, value in optional.items() if value is not None}
+        )
         return {key: float(value) for key, value in values.items()}
 
 
@@ -57,10 +69,10 @@ class PlantState:
 class ControlCommand:
     """Command sent across the plant/communication boundary."""
 
-    timestamp_s: float = 0.0
-    requested_speed_pu: float = 1.0
     load_torque_pu: float = 1.0
+    requested_speed_pu: float = 1.0
     cooling_flow_pu: float = 1.0
+    timestamp_s: float = 0.0
     command_id: str = ""
     source: str = "controller"
     signature: str = ""

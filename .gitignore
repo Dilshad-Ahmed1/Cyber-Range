@@ -6,5 +6,4 @@ __pycache__/
 *.fmu
 results/
 Manuscript/
-docs/
 .pytest_cache/

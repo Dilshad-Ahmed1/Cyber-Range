@@ -8,3 +8,6 @@ OMPython
 requests
 streamlit
 pytest
+fastapi
+uvicorn
+websockets

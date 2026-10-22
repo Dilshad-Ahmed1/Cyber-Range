@@ -483,9 +483,11 @@ def compute_metrics(
 
 
 def parse_filename(path: Path) -> tuple[str | None, str | None, str | None, float]:
-    """Parse standard, BaSyx, and controller-only result filenames.
+    """Parse campaign, duration, BaSyx, and controller-only result filenames.
 
-    Accepted examples (duration is optional):
+    Accepted examples:
+    - bearing_wear_proxy_adaptive.csv
+    - combined_supported_constrained.csv
     - combined_constrained_1800s.csv
     - combined_constrained_basyx.csv
     - combined_constrained_controller_only.csv
@@ -495,16 +497,25 @@ def parse_filename(path: Path) -> tuple[str | None, str | None, str | None, floa
     stem = path.stem
 
     for controller in sorted(CONTROLLERS, key=len, reverse=True):
-        marker = f"_{controller}_"
-        if marker not in stem:
+        marker = f"_{controller}"
+        marker_index = stem.rfind(marker)
+        if marker_index <= 0:
             continue
 
-        prefix, suffix = stem.split(marker, 1)
-        if not prefix:
+        prefix = stem[:marker_index]
+        suffix = stem[marker_index + len(marker) :]
+        if suffix and not suffix.startswith("_"):
             continue
 
-        tail = suffix.split("_")
+        tail = suffix[1:].split("_") if suffix else []
         run_variant = "standard"
+
+        declared_duration_s = float("nan")
+        if tail:
+            duration_match = _DURATION_TOKEN.fullmatch(tail[-1])
+            if duration_match:
+                declared_duration_s = float(duration_match.group("seconds"))
+                tail = tail[:-1]
 
         if tail[-2:] == ["controller", "only"]:
             run_variant = "controller_only"
@@ -513,7 +524,6 @@ def parse_filename(path: Path) -> tuple[str | None, str | None, str | None, floa
             run_variant = "basyx"
             tail = tail[:-1]
 
-        declared_duration_s = float("nan")
         if tail:
             duration_match = _DURATION_TOKEN.fullmatch(tail[-1])
             if duration_match:
@@ -599,6 +609,13 @@ def main() -> int:
         rows.append(row)
 
     summary = pd.DataFrame(rows)
+    if summary.empty:
+        raise ValueError(
+            "No experiment result CSVs found in "
+            f"{args.input_dir.resolve()}. Expected filenames such as "
+            "<scenario>_<controller>.csv or "
+            "<scenario>_<controller>_<duration>s.csv."
+        )
 
     summary = summary.sort_values(
         ["scenario", "controller", "duration_s", "run_variant"]

@@ -8,7 +8,7 @@ from plant.interface import ControlCommand, PlantInterface, PlantState
 from simulation.fmu_runtime import FMURuntime
 
 
-FaultInputProvider = Callable[[float], dict[str, Any]]
+InputModifier = Callable[[float, dict[str, Any]], dict[str, Any]]
 
 
 class FMUPlant(PlantInterface):
@@ -18,11 +18,11 @@ class FMUPlant(PlantInterface):
         self,
         fmu_path: Path,
         stop_time_s: float | None = None,
-        fault_inputs: FaultInputProvider | None = None,
+        input_modifier: InputModifier | None = None,
     ) -> None:
         self.fmu_path = Path(fmu_path).resolve()
         self.stop_time_s = stop_time_s
-        self.fault_inputs = fault_inputs
+        self.input_modifier = input_modifier
         self._runtime: FMURuntime | None = None
         self._command = ControlCommand(timestamp_s=0.0)
         self._measurement: dict[str, float] | None = None
@@ -54,25 +54,33 @@ class FMUPlant(PlantInterface):
         if self._measurement is None:
             raise RuntimeError("Plant must be started before reading state.")
         measurement = self._measurement
-        thermal_state = int(measurement.get("thermal_state", 0.0))
-        status = {0: "normal", 1: "thermal_warning", 2: "thermal_critical"}.get(
-            thermal_state,
-            "unknown",
+        vibration_supported = bool(
+            measurement.get("mechanical_unbalance_supported", 0.0)
         )
         return PlantState(
             timestamp_s=self.current_time_s,
             speed_rpm=float(measurement["speed_rpm"]),
             temperature_C=float(measurement["T_sensor_C"]),
             current_A=float(measurement["I_rms_A"]),
-            voltage_V=400.0,
+            voltage_V=float(measurement["line_voltage_rms_V"]),
             electrical_power_W=float(measurement["P_electrical_W"]),
             load_torque_Nm=float(measurement["torque_load_Nm"]),
-            vibration_mm_s=float(measurement["vibration_mm_s_out"]),
+            vibration_mm_s=(
+                float(measurement["vibration_mm_s_out"])
+                if vibration_supported
+                else None
+            ),
             frame_temperature_C=float(measurement["T_frame_C"]),
             shaft_power_W=float(measurement["P_shaft_W"]),
             motor_torque_Nm=float(measurement["torque_motor_Nm"]),
-            motor_status=status,
-            thermal_margin_C=float(measurement["thermal_margin_to_critical_K"]),
+            motor_status="running" if float(measurement["speed_rpm"]) > 1.0 else "stopped",
+            ambient_temperature_C=float(measurement["T_ambient_C"]),
+            supply_frequency_Hz=float(measurement["supply_frequency_Hz"]),
+            power_factor=float(measurement["power_factor"]),
+            reactive_power_var=float(measurement["reactive_power_var"]),
+            voltage_unbalance_percent=float(measurement["voltage_unbalance_percent"]),
+            current_pu=float(measurement["current_pu"]),
+            load_torque_pu=float(measurement["load_torque_pu"]),
         )
 
     def send_command(self, command: ControlCommand) -> None:
@@ -87,8 +95,8 @@ class FMUPlant(PlantInterface):
             raise ValueError("step_s must be > 0")
 
         inputs = self._command.as_inputs()
-        if self.fault_inputs is not None:
-            inputs.update(self.fault_inputs(self.current_time_s))
+        if self.input_modifier is not None:
+            inputs = self.input_modifier(self.current_time_s, inputs)
 
         self._measurement, solver_time_s = self._runtime.step(step_s, inputs)
         self._record_evaluation(solver_time_s=solver_time_s)
