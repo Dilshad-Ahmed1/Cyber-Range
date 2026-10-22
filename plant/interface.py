@@ -63,6 +63,7 @@ class ControlCommand:
     cooling_flow_pu: float = 1.0
     command_id: str = ""
     source: str = "controller"
+    signature: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def as_inputs(self) -> dict[str, float]:

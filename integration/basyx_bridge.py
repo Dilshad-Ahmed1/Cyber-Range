@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import time
+from urllib.parse import urlparse
 from pathlib import Path
 from typing import Any
 
@@ -38,10 +40,19 @@ class BaSyxBridge:
         host: str = "http://localhost:8081",
         config_path: str | Path = "config/motor_aas_definition.json",
         timeout_s: float = 3.0,
+        allowed_hosts: set[str] | None = None,
+        auth_token: str | None = None,
     ) -> None:
 
         self.base_url = host.rstrip("/")
         self.timeout_s = float(timeout_s)
+        parsed_host = urlparse(self.base_url)
+        if parsed_host.scheme not in {"http", "https"} or not parsed_host.hostname:
+            raise ValueError("BaSyx host must be an absolute http(s) URL")
+        if parsed_host.username or parsed_host.password:
+            raise ValueError("BaSyx host must not contain embedded credentials")
+        if allowed_hosts is not None and parsed_host.hostname not in allowed_hosts:
+            raise ValueError(f"BaSyx host is not allowlisted: {parsed_host.hostname}")
 
         self.session = requests.Session()
         self.session.headers.update(
@@ -50,6 +61,8 @@ class BaSyxBridge:
                 "Content-Type": "application/json",
             }
         )
+        if auth_token:
+            self.session.headers["Authorization"] = f"Bearer {auth_token}"
 
         self.config_path = Path(
             config_path
@@ -251,6 +264,8 @@ class BaSyxBridge:
             )
 
         if isinstance(value, float):
+            if not math.isfinite(value):
+                raise ValueError("BaSyx values must be finite")
             return f"{value:.12g}"
 
         return str(value)
@@ -413,6 +428,16 @@ class BaSyxBridge:
         )
 
         value_map = dict(values)
+
+        known_properties = {
+            element.get("idShort")
+            for element in sm.get("submodelElements", [])
+        }
+        unknown_properties = set(value_map) - known_properties
+        if unknown_properties:
+            raise KeyError(
+                f"Unknown project properties: {sorted(unknown_properties)}"
+            )
 
         for element in sm.get(
             "submodelElements",

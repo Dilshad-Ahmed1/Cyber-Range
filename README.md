@@ -4,10 +4,76 @@ This repository is the simulation foundation for the future project
 "Cyber-Resilient Industrial Motor Control Using a Physics-Informed Digital
 Twin".
 
-The current scope is deliberately limited to the industrial motor digital
-twin and its simulation infrastructure. Cyberattacks, Modbus attack code,
-anomaly detection, risk scoring, prevention decisions, and ML models are not
-implemented yet.
+The project focuses on the industrial motor digital twin and its simulation
+infrastructure. It includes repeatable cyberattack profiles, command and
+telemetry defenses, and physics-informed cyber-physical detection. A concrete
+Modbus/PLC transport and a trained ML detector remain future integration work.
+
+The runtime now includes a defensive control boundary: commands are rejected
+when they contain non-finite or out-of-range actuator values, come from an
+untrusted source, move backward in time, or reuse a command ID. BaSyx
+synchronization also validates HTTP(S) endpoints, supports bearer
+authentication and host allowlisting, rejects non-finite telemetry, and
+rejects properties outside the checked AAS schema. These controls prevent
+common command injection, replay, endpoint redirection, and telemetry
+poisoning attempts; production deployments still need TLS, network
+segmentation, secret management, and authenticated PLC/VFD protocols.
+
+## Motor cyberattack matrix
+
+The attack catalog is implemented in `cybersecurity/attack_simulator.py` and
+the protections are enforced at the shared communication boundary. The same
+boundary can wrap `SimulatedCommunication` for FMU testing or a concrete
+`HardwarePlant` adapter for a physical motor.
+
+| Attack | Target | Implemented prevention/detection |
+|---|---|---|
+| Command injection | Speed, load, cooling command | Source allowlist, finite values, actuator bounds |
+| Replay | Commands or telemetry | Unique command IDs and monotonic timestamps |
+| MITM command tampering | Command frame | Optional HMAC-SHA256 signatures |
+| Sensor spoofing | Temperature, speed, current, voltage | State plausibility limits plus estimator residuals |
+| Stale telemetry | Sensor stream | Timestamp freshness validation |
+| DoS/control flooding | Command transport | Duplicate-cycle rejection and deadline metrics |
+| Unsafe AAS write | Digital-twin properties | Schema allowlist and finite-value validation |
+| Physical-fault masquerade | Thermal/mechanical condition | Independent state estimation, persistence, and derating |
+| Endpoint redirection | BaSyx connection | HTTP(S) validation, credentials rejection, host allowlist |
+| Non-finite payload | Commands/telemetry/AAS | Rejects `NaN` and infinity |
+
+Attack-defense tests are in `tests/test_attack_defenses.py`. HMAC protection
+is enabled for a deployment by constructing the policy with a secret key and
+`require_signature=True`; the key must come from a deployment secret store,
+not source code. For a physical motor, use the same policy when constructing
+`PlantCommunication(hardware_plant, security_policy=..., state_security_policy=...)`
+before sending any PLC/VFD command.
+
+## Cyber-physical research experiment layer
+
+`cybersecurity/cyber_attacks.py` provides repeatable profiles for:
+
+- unauthorized command manipulation;
+- temperature/sensor spoofing;
+- replayed observations;
+- false-data injection; and
+- gradual stealth manipulation.
+
+`cybersecurity/digital_twin_detector.py` keeps the comparison baselines
+separate:
+
+1. `network_command_score()` represents network/rule-only detection.
+2. `CyberPhysicalDetector` scores speed-command, temperature-observer, and
+	frame-model residuals from the digital twin.
+3. `combined_score` combines network and physics evidence for the final alert.
+
+This separation supports the proposed comparison of normal operation,
+physical faults, sensor spoofing, command manipulation, replay, and gradual
+attacks using detection latency, false alarms, physical deviation, and attack
+impact. The attack profiles modify observation copies or controller command
+copies; FMU truth remains private and is never used by the detector.
+
+The current physical adapter is intentionally still a boundary: the same
+detector and `PlantCommunication` security wrapper can be connected to a PLC
+or VFD implementation, but no real hardware transport is assumed or opened
+by this repository.
 
 ## What the project does
 
